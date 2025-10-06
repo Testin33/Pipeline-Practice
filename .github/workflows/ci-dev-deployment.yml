@@ -2,7 +2,10 @@ name: CI Dev Deployment
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master ]  # <-- tu rama
+
+permissions:
+  contents: write         # necesario para crear releases/tags
 
 jobs:
   build:
@@ -15,17 +18,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: '1.x'
+      - name: Install deps
+        run: npm ci
 
-      - name: Build
-        run: |
-          bun install
-          bunx --bun ncc build src/index.js --license licenses.txt
-          zip -r build.zip .
+      # Compila la acción con ncc (sin Bun)
+      - name: Build with ncc
+        run: npx @vercel/ncc build src/index.js --license licenses.txt
+
+      # Empaqueta (puedes ajustar qué incluir)
+      - name: Zip artifact
+        run: zip -r build.zip . -x ".git/*" "node_modules/*"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
