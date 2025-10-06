@@ -1,8 +1,7 @@
 name: CI Dev Deployment
-
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]  # ← Cambiar si es necesario
 
 permissions:
   contents: write
@@ -13,12 +12,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+        
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
+          
       - name: Install deps (if present)
         shell: bash
         run: |
@@ -27,17 +26,17 @@ jobs:
           elif [ -f package.json ]; then
             npm install
           fi
-
+          
       - name: Build (optional ncc)
         shell: bash
         run: |
           if [ -f src/index.js ]; then
             npx --yes @vercel/ncc build src/index.js --license licenses.txt || echo "Build skipped"
           fi
-
+          
       - name: Zip artifact
         run: zip -r build.zip . -x ".git/*" "node_modules/*" ".github/*"
-
+        
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -49,17 +48,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: build-artifact
-
-     
-      - name: Install GitHub CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
-
+      
       - name: Release Dev Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,4 +63,5 @@ jobs:
           NOTE: ${{ vars.RELEASE_NOTE }}
         run: |
           echo "Creating release for tag: $TAG"
-          gh release create "$TAG" build.zip --notes "$NOTE" || echo "Release already exists or failed"
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" build.zip --notes "$NOTE" --repo ${{ github.repository }}
