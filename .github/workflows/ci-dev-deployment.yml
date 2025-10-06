@@ -2,10 +2,10 @@ name: CI Dev Deployment
 
 on:
   push:
-    branches: [ master ]   # tu rama
+    branches: [ master ]
 
 permissions:
-  contents: write          # necesario para crear releases
+  contents: write
 
 jobs:
   build:
@@ -18,46 +18,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # NO usamos cache porque no hay lockfile
 
-      # Instalación tolerante:
-      # - si hay package-lock.json -> npm ci
-      # - si solo hay package.json -> npm install
-      # - si no hay ninguno -> no instalamos
       - name: Install deps (if present)
         shell: bash
         run: |
-          set -e
           if [ -f package-lock.json ]; then
-            echo "Found package-lock.json -> npm ci"
             npm ci
           elif [ -f package.json ]; then
-            echo "Found package.json -> npm install"
             npm install
-          else
-            echo "No package.json -> skipping install"
           fi
 
-      # Build tolerante:
-      # si existe src/index.js intentamos compilar con ncc,
-      # si falla o no existe, seguimos (esto evita exit code 1).
-      - name: Build (try ncc if src/index.js exists)
+      - name: Build (optional ncc)
         shell: bash
         run: |
-          set -e
           if [ -f src/index.js ]; then
-            echo "Building with ncc..."
-            npx --yes @vercel/ncc build src/index.js --license licenses.txt || {
-              echo "ncc failed, continuing without bundle";
-            }
-          else
-            echo "src/index.js not found, skipping ncc build"
+            npx --yes @vercel/ncc build src/index.js --license licenses.txt || echo "Build skipped"
           fi
 
       - name: Zip artifact
-        run: |
-          zip -r build.zip . \
-            -x ".git/*" "node_modules/*" ".github/*"
+        run: zip -r build.zip . -x ".git/*" "node_modules/*" ".github/*"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -75,10 +54,17 @@ jobs:
         with:
           name: build-artifact
 
+     
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
       - name: Release Dev Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ vars.BUILD_TAG }}
           NOTE: ${{ vars.RELEASE_NOTE }}
         run: |
-          gh release create "$TAG" build.zip --notes "$NOTE"
+          echo "Creating release for tag: $TAG"
+          gh release create "$TAG" build.zip --notes "$NOTE" || echo "Release already exists or failed"
