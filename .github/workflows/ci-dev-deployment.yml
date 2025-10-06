@@ -1,7 +1,7 @@
 name: CI Dev Deployment
 on:
   push:
-    branches: [ main ]  # ← Cambiar si es necesario
+    branches: [ master ]  # ← Cambiar si es necesario
 
 permissions:
   contents: write
