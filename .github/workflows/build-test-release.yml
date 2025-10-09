@@ -66,46 +66,21 @@ jobs:
         with:
           name: build-artifact
 
-      - name: Inspect workspace
-        run: |
-          pwd
-          ls -lah
-          echo "SHA: $GITHUB_SHA"
-
-      - name: Install GitHub CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
-
-      - name: Authenticate GitHub CLI
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "${GITHUB_TOKEN}" | gh auth login --with-token
-          gh auth status
-
-      - name: Release to Dev (create or upload)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_FROM_ENV: ${{ vars.BUILD_TAG }}
-          NOTE: ${{ vars.RELEASE_NOTE }}
+      # Genera un tag único: <BUILD_TAG>-<run_number>, ej: dev-v1.0-27
+      - name: Compute tag
+        id: tag
         shell: bash
         run: |
-          set -euo pipefail
-          TAG="${TAG_FROM_ENV:-}"
-          # fallback si no configuraste la var en el environment
-          if [ -z "$TAG" ]; then
-            TAG="dev-$(date +%s)"
-            echo "No BUILD_TAG found in environment. Using fallback: $TAG"
-          fi
-          echo "TAG: $TAG"
-          echo "NOTE: ${NOTE:-'(no notes)'}"
+          base="${{ vars.BUILD_TAG }}"
+          if [ -z "$base" ]; then base="dev"; fi
+          echo "tag=${base}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-          # si ya existe el release -> sube/actualiza el asset
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists. Uploading asset (overwrite)..."
-            gh release upload "$TAG" build.zip --clobber
-          else
-            echo "Creating new release $TAG"
-            gh release create "$TAG" build.zip --title "$TAG" --notes "${NOTE:-Automated release}"
-          fi
+      # Crea/actualiza el release y sube build.zip (sin usar gh CLI)
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: ${{ vars.RELEASE_NOTE }}
+          files: build.zip
+          fail_on_unmatched_files: false
