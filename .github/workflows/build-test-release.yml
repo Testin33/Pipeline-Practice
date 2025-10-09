@@ -66,6 +66,12 @@ jobs:
         with:
           name: build-artifact
 
+      - name: Inspect workspace
+        run: |
+          pwd
+          ls -lah
+          echo "SHA: $GITHUB_SHA"
+
       - name: Install GitHub CLI
         run: |
           sudo apt-get update
@@ -76,12 +82,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "${GITHUB_TOKEN}" | gh auth login --with-token
+          gh auth status
 
-      - name: Release to Dev
+      - name: Release to Dev (create or upload)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ vars.BUILD_TAG }}
+          TAG_FROM_ENV: ${{ vars.BUILD_TAG }}
           NOTE: ${{ vars.RELEASE_NOTE }}
+        shell: bash
         run: |
-          echo "Creating release: $TAG"
-          gh release create "$TAG" build.zip --notes "$NOTE" || echo "⚠️ Release already exists, skipping."
+          set -euo pipefail
+          TAG="${TAG_FROM_ENV:-}"
+          # fallback si no configuraste la var en el environment
+          if [ -z "$TAG" ]; then
+            TAG="dev-$(date +%s)"
+            echo "No BUILD_TAG found in environment. Using fallback: $TAG"
+          fi
+          echo "TAG: $TAG"
+          echo "NOTE: ${NOTE:-'(no notes)'}"
+
+          # si ya existe el release -> sube/actualiza el asset
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Uploading asset (overwrite)..."
+            gh release upload "$TAG" build.zip --clobber
+          else
+            echo "Creating new release $TAG"
+            gh release create "$TAG" build.zip --title "$TAG" --notes "${NOTE:-Automated release}"
+          fi
