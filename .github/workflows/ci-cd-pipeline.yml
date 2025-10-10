@@ -63,7 +63,7 @@ jobs:
           TAG: ${{ vars.BUILD_TAG }}
           NOTE: ${{ vars.RELEASE_NOTE }}
         run: |
-          echo "🚀 Deploying to STAGING with tag: $TAG"
+          echo " Deploying to STAGING with tag: $TAG"
           gh release delete "$TAG" --yes 2>/dev/null || true
           gh release create "$TAG" build.zip \
             --notes "$NOTE" \
@@ -89,7 +89,7 @@ jobs:
           TAG: ${{ vars.BUILD_TAG }}
           NOTE: ${{ vars.RELEASE_NOTE }}
         run: |
-          echo "✅ Deploying to PRODUCTION with tag: $TAG"
+          echo " Deploying to PRODUCTION with tag: $TAG"
           gh release delete "$TAG" --yes 2>/dev/null || true
           gh release create "$TAG" build.zip \
             --notes "$NOTE" \
