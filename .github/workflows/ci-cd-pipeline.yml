@@ -1,97 +1,91 @@
 name: CI/CD Deployment Pipeline
 
 on:
-  workflow_dispatch:  # Trigger manual
+  workflow_dispatch: {}   # ejecútalo manualmente desde Actions
 
 permissions:
   contents: write
 
 jobs:
+  # 1) BUILD: compila y publica un artefacto único para todas las etapas
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
+      - uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
-      - name: Install dependencies
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          elif [ -f package.json ]; then
-            npm install
-          fi
-          
-      - name: Build
-        shell: bash
+
+      - name: Install deps
+        run: npm install
+
+      - name: Build (ncc optional)
         run: |
           if [ -f src/index.js ]; then
-            npx --yes @vercel/ncc build src/index.js --license licenses.txt || echo "Build skipped"
+            npx --yes @vercel/ncc build src/index.js --license licenses.txt || echo "ncc skipped"
           fi
-          
-      - name: Create artifact
+
+      - name: Zip artifact
         run: zip -r build.zip . -x ".git/*" "node_modules/*" ".github/*"
-        
-      - name: Upload Artifact
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
           path: build.zip
-          retention-days: 5
 
+  # 2) STAGING: usa el MISMO artefacto y publica release de staging
   deploy-staging:
     needs: build
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: build-artifact
-      
-      - name: Release to Staging
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ vars.BUILD_TAG }}
-          NOTE: ${{ vars.RELEASE_NOTE }}
-        run: |
-          echo " Deploying to STAGING with tag: $TAG"
-          gh release delete "$TAG" --yes 2>/dev/null || true
-          gh release create "$TAG" build.zip \
-            --notes "$NOTE" \
-            --prerelease \
-            --repo ${{ github.repository }}
 
+      - name: Compute staging tag
+        id: stag_tag
+        shell: bash
+        run: |
+          base="${{ vars.BUILD_TAG }}"
+          [ -z "$base" ] && base="staging"
+          echo "tag=${base}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Release to Staging
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.stag_tag.outputs.tag }}
+          name: ${{ steps.stag_tag.outputs.tag }}
+          body: ${{ vars.RELEASE_NOTE }}
+          files: build.zip
+          fail_on_unmatched_files: false
+
+  # 3) PRODUCTION: solo si staging pasó; se frena por aprobación (environment: production)
   deploy-production:
     needs: deploy-staging
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: build-artifact
-      
-      - name: Release to Production
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ vars.BUILD_TAG }}
-          NOTE: ${{ vars.RELEASE_NOTE }}
+
+      - name: Compute prod tag
+        id: prod_tag
+        shell: bash
         run: |
-          echo " Deploying to PRODUCTION with tag: $TAG"
-          gh release delete "$TAG" --yes 2>/dev/null || true
-          gh release create "$TAG" build.zip \
-            --notes "$NOTE" \
-            --latest \
-            --repo ${{ github.repository }}
+          base="${{ vars.BUILD_TAG }}"
+          [ -z "$base" ] && base="prod"
+          echo "tag=${base}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Release to Production
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prod_tag.outputs.tag }}
+          name: ${{ steps.prod_tag.outputs.tag }}
+          body: ${{ vars.RELEASE_NOTE }}
+          files: build.zip
+          fail_on_unmatched_files: false
